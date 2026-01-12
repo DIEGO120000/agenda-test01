@@ -1,0 +1,7 @@
+{
+  "name": "Agenda Virtual Inteligente (Formato A)",
+  "description": "Una plataforma avanzada de gestión de itinerario académico y personal que utiliza el estricto 'Formato A' con integración de IA para planificación inteligente y control del tiempo.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
