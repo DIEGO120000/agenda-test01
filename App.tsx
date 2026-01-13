@@ -1,18 +1,16 @@
-
 import React, { useState, useEffect } from 'react';
-import { Tarea, Nota, Pasatiempo, AppState, EstadoTarea, EventoHorario } from './types';
+import { Tarea, Nota, Pasatiempo, AppState, EstadoTarea, EventoHorario, PrioridadTarea } from './types';
 import AgendaTable from './components/AgendaTable';
 import SidebarAI from './components/SidebarAI';
 import TaskForm from './components/TaskForm';
 import Sections from './components/Sections';
 import ScheduleSection from './components/ScheduleSection';
-import { PlusCircle, Calendar, ClipboardList, Moon, Sun, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
+import { PlusCircle, Calendar, ClipboardList, Moon, Sun } from 'lucide-react';
 
 const App: React.FC = () => {
-  const [hasError, setHasError] = useState(false);
   const [state, setState] = useState<AppState>(() => {
     try {
-      const saved = localStorage.getItem('agenda_app_state');
+      const saved = localStorage.getItem('agenda_app_state_v2');
       if (!saved) return { tareas: [], notas: [], pasatiempos: [], horario: [] };
       const parsed = JSON.parse(saved);
       return {
@@ -21,18 +19,12 @@ const App: React.FC = () => {
         pasatiempos: Array.isArray(parsed.pasatiempos) ? parsed.pasatiempos : [],
         horario: Array.isArray(parsed.horario) ? parsed.horario : [],
       };
-    } catch (e) {
-      console.error("Error al cargar estado inicial:", e);
+    } catch {
       return { tareas: [], notas: [], pasatiempos: [], horario: [] };
     }
   });
 
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('agenda_dark_mode') === 'true';
-    } catch { return false; }
-  });
-
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('agenda_dark_mode') === 'true');
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -42,134 +34,155 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('agenda_app_state', JSON.stringify(state));
-    } catch (e) { console.error("Error al guardar estado:", e); }
+    localStorage.setItem('agenda_app_state_v2', JSON.stringify(state));
   }, [state]);
 
   useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-    try {
-      localStorage.setItem('agenda_dark_mode', darkMode.toString());
-    } catch {}
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('agenda_dark_mode', darkMode.toString());
   }, [darkMode]);
 
-  if (hasError) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center text-white p-6 text-center">
-        <AlertTriangle size={64} className="text-yellow-500 mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Oops, el sistema encontró un error crítico</h1>
-        <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="flex items-center gap-2 bg-blue-600 px-6 py-3 rounded-xl font-bold mt-4"><RefreshCw size={20} /> Reiniciar</button>
-      </div>
-    );
-  }
-
-  const bulkAddTasks = (nuevasTareas: any[]) => {
-    const tasksWithMetadata = nuevasTareas.map(t => ({
-      nombre: t.nombre || 'Tarea sin nombre',
-      recomendado: t.recomendado || new Date().toISOString(),
-      culminacion: t.culminacion || new Date().toISOString(),
-      criticidad: t.criticidad || 5,
-      prioridad: t.prioridad || 'Media 🟡',
+  // Handlers para la IA (Mapeo de Funciones)
+  const bulkAddTasks = (nuevas: any[]) => {
+    const mapped = nuevas.map(t => ({
+      ...t,
       id: crypto.randomUUID(),
       ingreso: new Date().toISOString(),
       estado: EstadoTarea.PENDIENTE,
     }));
-    setState(prev => ({ ...prev, tareas: [...prev.tareas, ...tasksWithMetadata] }));
+    setState(prev => ({ ...prev, tareas: [...prev.tareas, ...mapped] }));
   };
 
   const removeTasksByName = (nombres: string[]) => {
-    setState(prev => ({ ...prev, tareas: prev.tareas.filter(t => !nombres.some(n => t.nombre.toLowerCase().includes(n.toLowerCase()))) }));
+    setState(prev => ({ 
+      ...prev, 
+      tareas: prev.tareas.filter(t => !nombres.some(n => t.nombre.toLowerCase().includes(n.toLowerCase()))) 
+    }));
   };
 
   const updateHorario = (eventos: any[]) => {
-    const nuevosEventos = eventos.map(e => ({ ...e, id: crypto.randomUUID() }));
-    setState(prev => ({ ...prev, horario: [...prev.horario, ...nuevosEventos] }));
+    const conId = eventos.map(e => ({ ...e, id: crypto.randomUUID() }));
+    setState(prev => ({ ...prev, horario: [...prev.horario, ...conId] }));
   };
 
-  const removeHorarioByCriteria = (criterios: any[]) => {
-    setState(prev => ({ ...prev, horario: prev.horario.filter(e => !criterios.some(c => e.dia === c.dia && e.actividad.includes(c.actividad))) }));
+  const removeHorarioByCriteria = (criterios: string[]) => {
+    setState(prev => ({
+      ...prev,
+      horario: prev.horario.filter(e => !criterios.some(c => e.actividad.toLowerCase().includes(c.toLowerCase())))
+    }));
   };
 
   const bulkAddNotas = (textos: string[]) => {
-    const nuevas = textos.map(t => ({ id: crypto.randomUUID(), contenido: t, timestamp: new Date().toISOString() }));
-    setState(prev => ({ ...prev, notas: [...prev.notas, ...nuevas] }));
+    const mapped = textos.map(t => ({
+      id: crypto.randomUUID(),
+      contenido: t,
+      timestamp: new Date().toISOString()
+    }));
+    setState(prev => ({ ...prev, notas: [...prev.notas, ...mapped] }));
   };
 
-  const removeNotasByFragment = (fragmentos: string[]) => {
-    setState(prev => ({ ...prev, notas: prev.notas.filter(n => !fragmentos.some(f => n.contenido.includes(f))) }));
+  const removeNotasByCriteria = (criterios: string[]) => {
+    setState(prev => ({
+      ...prev,
+      notas: prev.notas.filter(n => !criterios.some(c => n.contenido.toLowerCase().includes(c.toLowerCase())))
+    }));
   };
 
-  const bulkAddPasatiempos = (textos: string[]) => {
-    const nuevos = textos.map(t => ({ id: crypto.randomUUID(), nombre: t, completado: false }));
-    setState(prev => ({ ...prev, pasatiempos: [...prev.pasatiempos, ...nuevos] }));
+  const bulkAddPasatiempos = (nombres: string[]) => {
+    const mapped = nombres.map(n => ({
+      id: crypto.randomUUID(),
+      nombre: n,
+      completado: false
+    }));
+    setState(prev => ({ ...prev, pasatiempos: [...prev.pasatiempos, ...mapped] }));
   };
 
-  const removePasatiemposByName = (nombres: string[]) => {
-    setState(prev => ({ ...prev, pasatiempos: prev.pasatiempos.filter(p => !nombres.some(n => p.nombre.includes(n))) }));
+  const removePasatiemposByCriteria = (criterios: string[]) => {
+    setState(prev => ({
+      ...prev,
+      pasatiempos: prev.pasatiempos.filter(p => !criterios.some(c => p.nombre.toLowerCase().includes(c.toLowerCase())))
+    }));
   };
 
   return (
-    <div className={`min-h-screen flex flex-col md:flex-row bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-white transition-colors duration-300 ${darkMode ? 'dark' : ''}`}>
-      <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-32 md:pb-8">
-        <header className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <Calendar className="text-blue-600 dark:text-blue-400" /> Agenda Formato A
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-white transition-colors duration-300">
+      <main className="max-w-7xl mx-auto p-4 md:p-8 pb-32">
+        <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="animate-in fade-in slide-in-from-left duration-700">
+            <h1 className="text-3xl font-black tracking-tighter flex items-center gap-3">
+              <Calendar className="text-blue-600" size={32} /> FORMATO A <span className="text-blue-600">CENTRAL</span>
             </h1>
-            <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider">Planificación Central</p>
+            <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1 ml-1 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> 
+              Sincronización de Agenda de Grado Activa
+            </p>
           </div>
           <div className="flex items-center gap-3">
-            <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg bg-gray-200 dark:bg-slate-800 transition-all shadow-sm">
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            <button onClick={() => setDarkMode(!darkMode)} className="p-2.5 rounded-xl bg-white dark:bg-slate-900 shadow-sm border border-gray-200 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+              {darkMode ? <Sun size={20} className="text-yellow-500" /> : <Moon size={20} className="text-blue-600" />}
             </button>
-            <button onClick={() => setIsTaskFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold flex items-center gap-2 shadow-md">
-              <PlusCircle size={20} /> Nueva Tarea
+            <button onClick={() => setIsTaskFormOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-xl font-black text-xs tracking-widest flex items-center gap-2 shadow-lg transition-all active:scale-95 uppercase">
+              <PlusCircle size={18} /> Nueva Tarea
             </button>
           </div>
         </header>
 
-        <section className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden mb-8">
-          <div className="p-4 bg-gray-50 dark:bg-slate-800/50 border-b border-gray-200 dark:border-slate-800 flex items-center gap-2 text-gray-700 dark:text-slate-300 font-bold uppercase text-xs">
-            <ClipboardList size={18} className="text-blue-500" /> Tabla Principal
+        <section className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl border border-gray-100 dark:border-slate-800 overflow-hidden mb-8 animate-in fade-in zoom-in-95 duration-500">
+          <div className="px-6 py-4 border-b border-gray-100 dark:border-slate-800 flex items-center gap-2 bg-gray-50/50 dark:bg-slate-800/30">
+            <ClipboardList className="text-blue-600" size={18} />
+            <h2 className="text-[10px] font-black uppercase tracking-widest text-gray-500 dark:text-slate-400">Módulo de Seguimiento Táctico</h2>
           </div>
           <AgendaTable 
             tareas={state.tareas} 
-            updateTask={(id, updates) => setState(prev => ({ ...prev, tareas: prev.tareas.map(t => t.id === id ? {...t, ...updates} : t) }))} 
-            removeTask={(id) => setState(prev => ({ ...prev, tareas: prev.tareas.filter(t => t.id !== id) }))}
             now={currentTime}
+            updateTask={(id, upds) => setState(p => ({ ...p, tareas: p.tareas.map(t => t.id === id ? {...t, ...upds} : t) }))}
+            removeTask={(id) => setState(p => ({ ...p, tareas: p.tareas.filter(t => t.id !== id) }))}
           />
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2">
-            <ScheduleSection horario={state.horario} onRemove={(id) => setState(prev => ({ ...prev, horario: prev.horario.filter(e => e.id !== id) }))} onClear={() => setState(prev => ({ ...prev, horario: [] }))} />
+          <div className="lg:col-span-2 animate-in fade-in slide-in-from-bottom duration-700">
+            <ScheduleSection 
+              horario={state.horario} 
+              onRemove={(id) => setState(p => ({ ...p, horario: p.horario.filter(e => e.id !== id) }))}
+              onClear={() => setState(p => ({ ...p, horario: [] }))}
+            />
           </div>
-          <div className="space-y-8">
+          <div className="space-y-8 animate-in fade-in slide-in-from-right duration-700">
             <Sections 
-              notas={state.notas} pasatiempos={state.pasatiempos}
-              addNota={(c) => setState(prev => ({ ...prev, notas: [...prev.notas, {id: crypto.randomUUID(), contenido: c, timestamp: new Date().toISOString()}] }))}
-              removeNota={(id) => setState(prev => ({ ...prev, notas: prev.notas.filter(n => n.id !== id) }))}
-              addPasatiempo={(n) => setState(prev => ({ ...prev, pasatiempos: [...prev.pasatiempos, {id: crypto.randomUUID(), nombre: n, completado: false}] }))}
-              togglePasatiempo={(id) => setState(prev => ({ ...prev, pasatiempos: prev.pasatiempos.map(p => p.id === id ? {...p, completado: !p.completado} : p) }))}
-              removePasatiempo={(id) => setState(prev => ({ ...prev, pasatiempos: prev.pasatiempos.filter(p => p.id !== id) }))}
+              notas={state.notas} 
+              pasatiempos={state.pasatiempos}
+              addNota={(c) => setState(p => ({ ...p, notas: [...p.notas, {id: crypto.randomUUID(), contenido: c, timestamp: new Date().toISOString()}] }))}
+              removeNota={(id) => setState(p => ({ ...p, notas: p.notas.filter(n => n.id !== id) }))}
+              addPasatiempo={(n) => setState(p => ({ ...p, pasatiempos: [...p.pasatiempos, {id: crypto.randomUUID(), nombre: n, completado: false}] }))}
+              togglePasatiempo={(id) => setState(p => ({ ...p, pasatiempos: p.pasatiempos.map(p => p.id === id ? {...p, completado: !p.completado} : p) }))}
+              removePasatiempo={(id) => setState(p => ({ ...p, pasatiempos: p.pasatiempos.filter(p => p.id !== id) }))}
             />
           </div>
         </div>
       </main>
 
       <SidebarAI 
-        state={state} onAIAddTask={bulkAddTasks} onAIRemoveTasks={removeTasksByName}
-        onAIUpdateHorario={updateHorario} onAIRemoveHorario={removeHorarioByCriteria}
-        onAIAddNotas={bulkAddNotas} onAIRemoveNotas={removeNotasByFragment}
-        onAIAddPasatiempos={bulkAddPasatiempos} onAIRemovePasatiempos={removePasatiemposByName}
+        state={state}
+        onAIAddTask={bulkAddTasks}
+        onAIRemoveTasks={removeTasksByName}
+        onAIUpdateHorario={updateHorario}
+        onAIRemoveHorario={removeHorarioByCriteria}
+        onAIAddNotas={bulkAddNotas}
+        onAIRemoveNotas={removeNotasByCriteria}
+        onAIAddPasatiempos={bulkAddPasatiempos}
+        onAIRemovePasatiempos={removePasatiemposByCriteria}
       />
 
-      {isTaskFormOpen && <TaskForm onClose={() => setIsTaskFormOpen(false)} onSubmit={(t) => setState(prev => ({ ...prev, tareas: [...prev.tareas, {...t, id: crypto.randomUUID(), ingreso: new Date().toISOString(), estado: EstadoTarea.PENDIENTE}] }))} />}
+      {isTaskFormOpen && (
+        <TaskForm 
+          onClose={() => setIsTaskFormOpen(false)} 
+          onSubmit={(t) => setState(p => ({ 
+            ...p, 
+            tareas: [...p.tareas, {...t, id: crypto.randomUUID(), ingreso: new Date().toISOString(), estado: EstadoTarea.PENDIENTE}] 
+          }))} 
+        />
+      )}
     </div>
   );
 };

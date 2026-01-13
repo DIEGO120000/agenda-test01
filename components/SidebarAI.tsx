@@ -1,8 +1,7 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { AppState, Tarea, EventoHorario } from '../types';
+import { AppState } from '../types';
 import { getAIResponse } from '../services/geminiService';
-import { Sparkles, Send, Bot, User, BrainCircuit, Mic, MicOff, Loader2, FileText, X, Paperclip, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, MessageSquare, AlertCircle } from 'lucide-react';
+import { Send, Bot, Mic, MicOff, Loader2, ChevronRight, ChevronLeft, ChevronUp, ChevronDown, AlertCircle, Paperclip } from 'lucide-react';
 
 interface Props {
   state: AppState;
@@ -22,209 +21,204 @@ const SidebarAI: React.FC<Props> = ({
 }) => {
   const [input, setInput] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(true);
-  const [messages, setMessages] = useState<{ role: 'ai' | 'user' | 'error'; text: string; fileName?: string }[]>([
-    { role: 'ai', text: '¡Hola! Soy tu Sistema Central Formato A. Ahora puedes añadir o eliminar cualquier horario, tarea o nota con tu voz o escribiendo.' }
+  const [messages, setMessages] = useState<{ role: 'ai' | 'user' | 'error'; text: string }[]>([
+    { role: 'ai', text: 'PROTOCOLO FORMATO A: NÚCLEO INICIALIZADO Y LISTO.' }
   ]);
   const [loading, setLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<{ data: string; name: string; mimeType: string } | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
     }
-  }, [messages, isCollapsed]);
+  }, [messages, loading]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.type !== 'application/pdf') {
-      alert('Solo se permiten archivos PDF.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = reader.result as string;
-      if (!result) return;
-      const base64 = result.includes(',') ? result.split(',')[1] : result;
-      setSelectedFile({
-        data: base64,
-        name: file.name,
-        mimeType: file.type
-      });
-    };
-    reader.onerror = () => alert("Error al leer el archivo.");
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
-      const recorder = new MediaRecorder(stream, { mimeType });
-      mediaRecorderRef.current = recorder;
-      chunksRef.current = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = async () => {
-        const audioBlob = new Blob(chunksRef.current, { type: mimeType });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const result = reader.result as string;
-          if (!result) return;
-          const base64Audio = result.includes(',') ? result.split(',')[1] : result;
-          handleSend(base64Audio);
-        };
-        reader.readAsDataURL(audioBlob);
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      recorder.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error("Error micrófono:", err);
-      setMessages(prev => [...prev, { role: 'error', text: "Error de Micrófono: Verifica que la página use HTTPS y que hayas dado permisos." }]);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const handleSend = async (audioData?: string) => {
+  const handleSend = async (
+    audioData?: { data: string, mimeType: string }, 
+    fileData?: { data: string, mimeType: string }
+  ) => {
     const trimmedInput = input.trim();
-    if (!trimmedInput && !audioData && !selectedFile || loading) return;
+    if (!trimmedInput && !audioData && !fileData || loading) return;
     
-    const userText = trimmedInput || (audioData ? "🎤 Comando de voz enviado" : (selectedFile ? `Archivo: ${selectedFile.name}` : ""));
-    const currentFile = selectedFile;
+    let userMsg = trimmedInput;
+    if (audioData) userMsg = "🎤 [COMANDO DE VOZ PROCESADO]";
+    if (fileData) userMsg = `📎 [ARCHIVO DETECTADO: ${fileData.mimeType.split('/')[1].toUpperCase()}]`;
     
     setInput('');
-    setSelectedFile(null);
-    setMessages(prev => [...prev, { role: 'user', text: userText, fileName: currentFile?.name }]);
+    setMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setLoading(true);
 
     try {
-      const response = await getAIResponse(state, trimmedInput, audioData, currentFile || undefined);
+      const response = await getAIResponse(state, trimmedInput, audioData, fileData);
+      const aiText = response.text || "ACCIÓN EJECUTADA. SINCRONIZANDO BASE DE DATOS...";
       
-      let actionExecuted = false;
-      if (response && response.candidates?.[0]?.content?.parts) {
-        // Procesar llamadas a funciones si existen
-        // Nota: La lógica de ejecución de funciones ya está integrada en el servicio
-      }
-
-      // Extraer texto de la respuesta
-      const textOutput = response.text || "Reporte: Cambios aplicados correctamente.";
-      setMessages(prev => [...prev, { role: 'ai', text: textOutput }]);
+      setMessages(prev => [...prev, { role: 'ai', text: aiText }]);
       
-      // Ejecutar funciones si vinieron en la respuesta
       if (response.functionCalls) {
-        for (const fc of response.functionCalls) {
-          const args = fc.args || {};
+        response.functionCalls.forEach(fc => {
+          const args = fc.args as any;
           switch (fc.name) {
-            case 'gestionar_agenda': if (args.tareas) onAIAddTask(args.tareas as any[]); break;
-            case 'eliminar_tarea': if (args.nombres) onAIRemoveTasks(args.nombres as string[]); break;
-            case 'gestionar_horario': if (args.eventos) onAIUpdateHorario(args.eventos as any[]); break;
-            case 'eliminar_horario': if (args.eventos) onAIRemoveHorario(args.eventos as any[]); break;
-            case 'gestionar_notes': if (args.notes) onAIAddNotas(args.notes as string[]); break;
-            case 'eliminar_nota': if (args.fragmentos) onAIRemoveNotas(args.fragmentos as string[]); break;
-            case 'gestionar_pasatiempos': if (args.pasatiempos) onAIAddPasatiempos(args.pasatiempos as any[]); break;
-            case 'eliminar_pasatiempo': if (args.nombres) onAIRemovePasatiempos(args.nombres as string[]); break;
+            case 'gestionar_agenda': if (args.tareas) onAIAddTask(args.tareas); break;
+            case 'gestionar_horario': if (args.eventos) onAIUpdateHorario(args.eventos); break;
+            case 'gestionar_notes': if (args.notes) onAIAddNotas(args.notes); break;
+            case 'gestionar_pasatiempos': if (args.hobbies) onAIAddPasatiempos(args.hobbies); break;
+            case 'eliminar_contenido':
+              if (args.tipo === 'tarea') onAIRemoveTasks(args.criterios);
+              if (args.tipo === 'horario') onAIRemoveHorario(args.criterios);
+              if (args.tipo === 'nota') onAIRemoveNotas(args.criterios);
+              if (args.tipo === 'pasatiempo') onAIRemovePasatiempos(args.criterios);
+              break;
           }
-        }
+        });
       }
-
     } catch (error: any) {
-      console.error("Error AI:", error);
-      setMessages(prev => [...prev, { role: 'error', text: `Error: No se pudo contactar con la IA. ${error.message || ''}` }]);
+      setMessages(prev => [...prev, { role: 'error', text: `FALLO DE NÚCLEO: ${error.message || 'DESCONOCIDO'}` }]);
     } finally {
       setLoading(false);
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
+      const recorder = new MediaRecorder(stream, { mimeType });
+      
+      mediaRecorderRef.current = recorder;
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+        if (audioBlob.size > 500) { 
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = (reader.result as string).split(',')[1];
+            handleSend({ data: base64, mimeType });
+          };
+          reader.readAsDataURL(audioBlob);
+        }
+        streamRef.current?.getTracks().forEach(t => t.stop());
+      };
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'error', text: "ERROR: ACCESO A PERIFÉRICO DENEGADO." }]);
+    }
+  };
+
   return (
     <>
-      {!isCollapsed && (
-        <div className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setIsCollapsed(true)} />
-      )}
+      {!isCollapsed && <div className="md:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-40" onClick={() => setIsCollapsed(true)} />}
 
       <aside className={`
-        fixed bottom-0 left-0 w-full md:relative md:bottom-auto md:left-auto
-        ${isCollapsed ? 'h-16 md:w-16 md:h-screen' : 'h-[85vh] md:h-screen md:w-96'}
-        bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-gray-200 dark:border-slate-800 
-        flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.2)] md:shadow-none 
-        transition-all duration-300 ease-out z-50 overflow-hidden
-        ${!isCollapsed && 'rounded-t-[3rem] md:rounded-t-none'}
+        fixed bottom-0 left-0 w-full md:relative md:h-screen transition-all duration-500 z-50
+        ${isCollapsed ? 'h-14 md:w-16' : 'h-[75vh] md:w-[380px]'}
+        bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-gray-200 dark:border-slate-800 flex flex-col shadow-2xl
       `}>
-        {/* Toggle para escritorio */}
-        <button onClick={() => setIsCollapsed(!isCollapsed)} className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 bg-blue-600 text-white p-1 rounded-r-lg z-50">
-          {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)} 
+          className="hidden md:flex absolute -left-4 top-12 bg-blue-600 text-white p-2 rounded-full shadow-xl hover:scale-110 transition-transform z-50"
+        >
+          {isCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
 
-        {/* Cabecera / Tirador para móvil */}
-        <div 
-          className="p-4 bg-blue-50 dark:bg-blue-900/20 flex items-center justify-between cursor-pointer md:cursor-default"
-          onClick={() => { if(window.innerWidth < 768) setIsCollapsed(!isCollapsed); }}
-        >
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 p-2 rounded-lg text-white">
-              <Bot size={20} />
+        <div className="h-14 bg-slate-900 flex items-center justify-between px-4 text-white shrink-0 cursor-pointer" onClick={() => window.innerWidth < 768 && setIsCollapsed(!isCollapsed)}>
+          <div className="flex items-center gap-3">
+            <div className={`p-1.5 rounded-lg bg-blue-600/20 text-blue-400 ${loading ? 'animate-pulse' : ''}`}>
+              <Bot size={18} />
             </div>
             {(!isCollapsed || window.innerWidth < 768) && (
-              <div>
-                <h2 className="font-bold text-blue-800 dark:text-blue-300 text-[10px] uppercase tracking-widest">Sistema IA</h2>
-                <span className="text-[9px] text-gray-400 font-bold uppercase">{isRecording ? '• Grabando' : '• Online'}</span>
+              <div className="flex flex-col">
+                <span className="mono font-bold text-[10px] tracking-widest text-blue-400 uppercase leading-none">A-AI CORE</span>
+                <span className="text-[7px] opacity-50 uppercase font-black tracking-tighter flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500 pulse-status"></span> PROTOCOLO ACTIVO
+                </span>
               </div>
             )}
           </div>
-          <div className="md:hidden">{isCollapsed ? <ChevronUp size={20} /> : <ChevronDown size={20} />}</div>
+          <div className="md:hidden">{isCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div>
         </div>
 
         {(!isCollapsed || window.innerWidth >= 768) && (
-          <div className="flex flex-col flex-1">
-            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/20 dark:bg-slate-950/20">
+          <div className="flex-1 flex flex-col overflow-hidden bg-white dark:bg-slate-950">
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
               {messages.map((m, i) => (
                 <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
-                    m.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 
-                    m.role === 'error' ? 'bg-red-50 text-red-600 border border-red-100 rounded-tl-none' :
-                    'bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-100 border border-gray-100 dark:border-slate-700 rounded-tl-none'
+                  <div className={`max-w-[88%] px-4 py-3 rounded-xl text-[12px] mono ${
+                    m.role === 'user' ? 'bg-blue-600 text-white' : 
+                    m.role === 'error' ? 'bg-red-950/20 text-red-500 border border-red-900/50' :
+                    'bg-slate-100 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-800 shadow-sm'
                   }`}>
-                    <p className="whitespace-pre-wrap">{m.text}</p>
+                    {m.role === 'ai' && <span className="text-[7px] block opacity-40 mb-1 tracking-[0.2em] uppercase font-black">Core Response</span>}
+                    {m.role === 'user' && <span className="text-[7px] block opacity-40 mb-1 tracking-[0.2em] uppercase font-black text-right">User Command</span>}
+                    {m.text}
                   </div>
                 </div>
               ))}
-              {loading && <Loader2 className="w-5 h-5 text-blue-500 animate-spin mx-auto" />}
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-100 dark:bg-slate-800/50 p-3 rounded-xl flex items-center gap-2 border border-slate-200 dark:border-slate-800">
+                    <Loader2 size={12} className="animate-spin text-blue-500" />
+                    <span className="mono text-[10px] text-slate-500 uppercase tracking-widest font-bold">Analizando...</span>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* AREA DE INPUT: pb-32 para evitar la barra de Android */}
-            <div className="p-4 pb-32 md:pb-6 border-t border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
-              <div className="relative">
+            <div className="p-4 bg-white dark:bg-slate-900 border-t border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800 rounded-xl px-2 py-1.5 border border-slate-200 dark:border-slate-700">
+                <input type="file" ref={fileInputRef} onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    const r = new FileReader();
+                    r.onloadend = () => handleSend(undefined, { data: (r.result as string).split(',')[1], mimeType: file.type });
+                    r.readAsDataURL(file);
+                  }
+                  e.target.value = '';
+                }} className="hidden" />
+                
+                <button 
+                  onClick={() => fileInputRef.current?.click()} 
+                  className="p-2 text-slate-400 hover:text-blue-500 transition-colors"
+                  title="Adjuntar Syllabus/Foto"
+                >
+                  <Paperclip size={18} />
+                </button>
+                
+                <button 
+                  onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} 
+                  className={`p-2 transition-colors ${isRecording ? 'text-red-500 animate-pulse' : 'text-slate-400 hover:text-red-500'}`}
+                  title="Comando de Voz"
+                >
+                  {isRecording ? <MicOff size={18} /> : <Mic size={18} />}
+                </button>
+
                 <textarea
+                  rows={1}
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Escribe o usa voz..."
-                  className="w-full border border-gray-200 dark:border-slate-700 rounded-2xl px-4 py-3 pr-28 text-sm bg-white dark:bg-slate-800 dark:text-white resize-none h-20 shadow-inner"
+                  onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                  placeholder="ORDEN TÁCTICA..."
+                  className="flex-1 bg-transparent border-none py-2 px-1 text-xs focus:ring-0 outline-none dark:text-white resize-none max-h-32 mono font-bold"
                 />
-                <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                  <input type="file" ref={fileInputRef} onChange={handleFileSelect} accept=".pdf" className="hidden" />
-                  <button onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-xl bg-gray-100 text-gray-500 hover:text-blue-600 transition-all"><Paperclip size={18} /></button>
-                  <button onClick={isRecording ? stopRecording : startRecording} className={`p-2.5 rounded-xl ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-500'}`}>{isRecording ? <MicOff size={18} /> : <Mic size={18} />}</button>
-                  <button onClick={() => handleSend()} className="p-2.5 bg-blue-600 text-white rounded-xl shadow-lg"><Send size={18} /></button>
-                </div>
+                
+                <button 
+                  onClick={() => handleSend()} 
+                  disabled={loading}
+                  className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md active:scale-90 transition-transform disabled:opacity-50"
+                >
+                  <Send size={16} />
+                </button>
+              </div>
+              <div className="mt-2 text-[6px] text-center text-slate-400 mono font-black uppercase tracking-[0.3em]">
+                Protocolo Formato A v2.1 // Central Core
               </div>
             </div>
           </div>
