@@ -3,20 +3,18 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/agenda-virtual/', 
-  define: {
-    'process.env': {}
-  },
+  // Asegúrate de que coincida con el nombre de tu repositorio
+  base: '/agenda-test01/', 
   build: {
     outDir: 'dist',
     rollupOptions: {
       output: {
         manualChunks: {
           'vendor-react': ['react', 'react-dom'],
-          'vendor-utils': ['lucide-react', 'date-fns', '@google/genai']
+          // CAMBIO CLAVE: Se actualizó de '@google/genai' a '@google/generative-ai'
+          'vendor-utils': ['lucide-react', 'date-fns', '@google/generative-ai']
         }
       }
     }
   }
-
 });
