@@ -5,9 +5,18 @@ export default defineConfig({
   plugins: [react()],
   base: '/agenda-virtual/', 
   define: {
-    'process.env.VITE_GEMINI_API_KEY': JSON.stringify(process.env.VITE_GEMINI_API_KEY)
+    'process.env': {}
   },
   build: {
-    outDir: 'dist'
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-utils': ['lucide-react', 'date-fns', '@google/genai']
+        }
+      }
+    }
   }
+
 });

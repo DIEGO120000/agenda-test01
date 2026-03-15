@@ -88,26 +88,27 @@ const tools: FunctionDeclaration[] = [
 ];
 
 export const getAIResponse = async (
-  state: AppState, 
-  userPrompt: string, 
+  state: AppState,
+  userPrompt: string,
   audio?: { data: string, mimeType: string },
   fileData?: { data: string, mimeType: string }
 ) => {
-  // Aseguramos que la instancia sea fresca para cada llamada
+  // === MOD AÑADIDO ===
+  // La API key ahora se toma desde environment variable
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   const now = new Date();
-  
+
   const systemInstruction = `
     ESTÁS OPERANDO BAJO EL "PROTOCOLO FORMATO A" v3.2.
     TU IDENTIDAD: Administradora de Vida y Agenda de Grado de Alto Rendimiento.
-    
+
     REGLA DE ORO DE AUDIO: Escucha fonéticamente con precisión. Diferencia entre:
     - Nombres propios (Pablo, María) -> Notas personales.
     - Términos financieros (pesos, debe, pagar) -> Notas personales.
     - Términos académicos (examen, parcial, entrega) -> Agenda.
 
     NO ALUCINES: Si el usuario dice "Pablo me debe 500 pesos", NO lo conviertas en un examen. Es una NOTA.
-    
+
     FECHA DEL SISTEMA: ${now.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
     TONO: Seco, ultra-eficiente, técnico.
   `;
@@ -115,23 +116,23 @@ export const getAIResponse = async (
   try {
     const parts: any[] = [];
     if (audio) {
-      parts.push({ 
-        inlineData: { 
-          mimeType: audio.mimeType, 
-          data: audio.data 
-        } 
+      parts.push({
+        inlineData: {
+          mimeType: audio.mimeType,
+          data: audio.data
+        }
       });
     }
-    
+
     if (fileData) {
-      parts.push({ 
-        inlineData: { 
-          mimeType: fileData.mimeType, 
-          data: fileData.data 
-        } 
+      parts.push({
+        inlineData: {
+          mimeType: fileData.mimeType,
+          data: fileData.data
+        }
       });
     }
-    
+
     const triggerText = userPrompt || (audio ? "TRANSCRIPCIÓN Y ACCIÓN REQUERIDA." : "ESPERANDO.");
     parts.push({ text: triggerText });
 
@@ -141,7 +142,7 @@ export const getAIResponse = async (
       config: {
         systemInstruction,
         tools: [{ functionDeclarations: tools }],
-        temperature: 0.1, // Baja temperatura para mayor fidelidad a la instrucción
+        temperature: 0.1,
       },
     });
 
